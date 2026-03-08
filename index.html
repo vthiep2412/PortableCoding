@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PortableCoding</title>
+    <!-- Embedded SVG Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23007acc' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='16 18 22 12 16 6'></polyline><polyline points='8 6 2 12 8 18'></polyline></svg>">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            background-color: #1e1e1e;
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            flex-direction: column;
+        }
+        .toolbar {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 25px;
+            background-color: #252526;
+            border-bottom: 1px solid #333;
+        }
+        .brand {
+            margin-right: auto;
+            color: #d4d4d4;
+            font-weight: 600;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .brand svg {
+            width: 20px;
+            height: 20px;
+        }
+        #editor {
+            flex: 1;
+            width: 100%;
+        }
+        select, button {
+            background: rgba(30, 30, 30, 0.85);
+            color: #d4d4d4;
+            border: 1px solid #444;
+            padding: 8px 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            backdrop-filter: blur(4px);
+            transition: all 0.2s ease;
+            outline: none;
+        }
+        select:hover, button:hover {
+            background: rgba(60, 60, 60, 0.9);
+            border-color: #666;
+            color: #fff;
+        }
+        select:focus {
+            border-color: #007acc;
+        }
+    </style>
+    <!-- LZ-String for URL-safe compression -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
+    <!-- Monaco Editor AMD Loader -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+</head>
+<body>
+
+    <div class="toolbar">
+        <div class="brand">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#007acc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="16 18 22 12 16 6"></polyline>
+                <polyline points="8 6 2 12 8 18"></polyline>
+            </svg>
+            PortableCoding
+        </div>
+        <select id="lang-selector">
+            <!-- Comprehensive Language Support -->
+            <option value="cpp">C++</option>
+            <option value="c">C</option>
+            <option value="csharp">C#</option>
+            <option value="java">Java</option>
+            <option value="javascript">JavaScript</option>
+            <option value="typescript">TypeScript</option>
+            <option value="python">Python</option>
+            <option value="ruby">Ruby</option>
+            <option value="php">PHP</option>
+            <option value="go">Go</option>
+            <option value="rust">Rust</option>
+            <option value="swift">Swift</option>
+            <option value="kotlin">Kotlin</option>
+            <option value="sql">SQL</option>
+            <option value="html">HTML</option>
+            <option value="css">CSS</option>
+            <option value="scss">SCSS</option>
+            <option value="json">JSON</option>
+            <option value="xml">XML</option>
+            <option value="yaml">YAML</option>
+            <option value="markdown">Markdown</option>
+            <option value="shell">Shell/Bash</option>
+            <option value="powershell">PowerShell</option>
+        </select>
+        <button id="btn-copy-code">Copy Code</button>
+        <button id="btn-copy-link">Copy Shareable Link</button>
+        <button id="btn-download">Download File</button>
+    </div>
+
+    <div id="editor"></div>
+
+    <script>
+        const defaultCode = `#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    ios_base::sync_with_stdio(0); cin.tie(0);\n    // freopen(".inp", "r", stdin);\n    // freopen(".out", "w", stdout);\n\n    return 0;\n}`;
+
+        let editorInstance;
+        const editorContainer = document.getElementById('editor');
+        const langSelector = document.getElementById('lang-selector');
+        const btnCopyCode = document.getElementById('btn-copy-code');
+        const btnCopyLink = document.getElementById('btn-copy-link');
+        const btnDownload = document.getElementById('btn-download');
+
+        // State Management Logic (Upgraded to handle JSON object for both language and code)
+        function compressState(code, lang) {
+            const payload = JSON.stringify({ l: lang, c: code });
+            return LZString.compressToEncodedURIComponent(payload);
+        }
+
+        function decompressState(hash) {
+            if (!hash || hash.length <= 1) return null;
+            try {
+                const decompressed = LZString.decompressFromEncodedURIComponent(hash.substring(1));
+                if (!decompressed) return null;
+                
+                // Check if it's the new JSON payload format
+                if (decompressed.startsWith('{')) {
+                    return JSON.parse(decompressed);
+                }
+                
+                // Legacy fallback for old links containing only raw code
+                return { l: 'cpp', c: decompressed };
+            } catch (e) {
+                console.error("Hydration failed:", e);
+                return null;
+            }
+        }
+
+        function getInitialState() {
+            const hash = window.location.hash;
+            const hydrated = decompressState(hash);
+            if (hydrated !== null) return hydrated;
+            return { l: 'cpp', c: defaultCode };
+        }
+
+        function updateUrlHash() {
+            if (!editorInstance) return;
+            const code = editorInstance.getValue();
+            const lang = langSelector.value;
+            const compressed = compressState(code, lang);
+            window.history.replaceState(null, null, '#' + compressed);
+        }
+
+        // Debounce utility to prevent main-thread lockup
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        const debouncedUrlUpdate = debounce(() => {
+            updateUrlHash();
+        }, 500);
+
+        // Initialization
+        const initialState = getInitialState();
+        langSelector.value = initialState.l || 'cpp';
+
+        require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' }});
+        require(['vs/editor/editor.main'], function() {
+            editorInstance = monaco.editor.create(editorContainer, {
+                value: initialState.c,
+                language: langSelector.value,
+                theme: 'vs-dark',
+                automaticLayout: true,
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                fontSize: 14,
+                fontFamily: "'Cascadia Code', Consolas, 'Courier New', monospace",
+                padding: { top: 20 }
+            });
+
+            // Listen for changes
+            editorInstance.onDidChangeModelContent(() => {
+                debouncedUrlUpdate();
+            });
+
+            // Language switching logic
+            langSelector.addEventListener('change', (e) => {
+                monaco.editor.setModelLanguage(editorInstance.getModel(), e.target.value);
+                updateUrlHash(); // Immediately update URL when language changes
+            });
+        });
+
+        // Feature: Copy Raw Code
+        btnCopyCode.addEventListener('click', () => {
+            if (!editorInstance) return;
+            navigator.clipboard.writeText(editorInstance.getValue()).then(() => {
+                const originalText = btnCopyCode.innerText;
+                btnCopyCode.innerText = "Copied!";
+                setTimeout(() => { btnCopyCode.innerText = originalText; }, 2000);
+            }).catch(err => {
+                console.error("Clipboard API failed:", err);
+            });
+        });
+
+        // Feature: Copy Shareable Link
+        btnCopyLink.addEventListener('click', () => {
+            updateUrlHash(); // Ensure URL is up to date immediately before copy
+            navigator.clipboard.writeText(window.location.href).then(() => {
+                const originalText = btnCopyLink.innerText;
+                btnCopyLink.innerText = "Link Copied!";
+                setTimeout(() => { btnCopyLink.innerText = originalText; }, 2000);
+            }).catch(err => {
+                console.error("Clipboard API failed:", err);
+            });
+        });
+
+        // Feature: Download File
+        btnDownload.addEventListener('click', () => {
+            if (!editorInstance) return;
+            const code = editorInstance.getValue();
+            const lang = langSelector.value;
+            
+            // Map language to standard file extensions
+            const extMap = { 
+                'cpp': 'cpp', 'c': 'c', 'csharp': 'cs', 'java': 'java',
+                'javascript': 'js', 'typescript': 'ts', 'python': 'py', 
+                'ruby': 'rb', 'php': 'php', 'go': 'go', 'rust': 'rs', 
+                'swift': 'swift', 'kotlin': 'kt', 'sql': 'sql', 
+                'html': 'html', 'css': 'css', 'scss': 'scss', 
+                'json': 'json', 'xml': 'xml', 'yaml': 'yml', 
+                'markdown': 'md', 'shell': 'sh', 'powershell': 'ps1'
+            };
+            const ext = extMap[lang] || 'txt';
+            const filename = `source.${ext}`;
+
+            const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 100);
+        });
+    </script>
+</body>
+</html>
